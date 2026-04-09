@@ -18,9 +18,6 @@ def safe_numeric(func):
 
 @safe_numeric
 def calculate_storage_cost(days: int) -> str:
-    days = int(days)
-
-def calculate_storage_cost(days: int) -> str:
     """Расчёт стоимости хранения в пункте выдачи"""
     try:
         days = int(days)
@@ -175,20 +172,23 @@ def validate_package_dimensions(length_cm: int, width_cm: int, height_cm: int) -
     }, ensure_ascii=False)
 
 
-def get_insurance_quote(declared_value_rub: float, category: str = "standard") -> str:
+def get_insurance_quote(declared_value_rub: float, category: str = "auto") -> str:
     """Расчёт стоимости страховки"""
     plans = {
         "basic": {"name": "Базовая (INS-BASE)", "coverage": 10000, "rate": 0.02, "franchise": 0.10},
         "pro": {"name": "Профи (INS-PRO)", "coverage": 100000, "rate": 0.035, "franchise": 0.05},
         "premium": {"name": "Премиум (INS-PREM)", "coverage": 500000, "rate": 0.05, "franchise": 0.0}
     }
-    
-    if declared_value_rub <= 10000:
-        plan = plans["basic"]
-    elif declared_value_rub <= 100000:
-        plan = plans["pro"]
+
+    if category in plans:
+        plan = plans[category]
     else:
-        plan = plans["premium"]
+        if declared_value_rub <= 10000:
+            plan = plans["basic"]
+        elif declared_value_rub <= 100000:
+            plan = plans["pro"]
+        else:
+            plan = plans["premium"]
     
     premium = declared_value_rub * plan["rate"]
     
@@ -238,6 +238,58 @@ def get_prohibited_items(query: str = "") -> str:
         "results": result,
         "note": "Полный список — в разделе 'Правила' ЛК, код документа: RULES-ZB-2026"
     }, ensure_ascii=False)
+
+def get_my_orders(
+    db: Session, 
+    current_user_id: int, 
+    limit: int = 5,  # ← ДОБАВЛЕНО: опциональный параметр
+    status_filter: str = None  # ← ДОБАВЛЕНО: фильтрация по статусу
+) -> str:
+    """Получить список заказов текущего пользователя"""
+    try:
+        # Валидация limit
+        limit = min(max(1, int(limit)), 20)  # от 1 до 20
+        
+        orders = crud.get_orders_by_user(db, current_user_id)
+        
+        # Применяем лимит
+        orders = orders[:limit]
+        
+        # Фильтр по статусу (опционально)
+        if status_filter and status_filter != "all":
+            orders = [o for o in orders if o.status.value == status_filter]
+        
+        if not orders:
+            return json.dumps({
+                "status": "empty",
+                "message": "У вас пока нет заказов" if not status_filter else f"Нет заказов со статусом '{status_filter}'",
+                "meta": "MY-ORDERS-V1"
+            }, ensure_ascii=False)
+        
+        result = {
+            "status": "success",
+            "count": len(orders),
+            "orders": [
+                {
+                    "tracking_number": o.tracking_number,
+                    "status": o.status.value,
+                    "origin": o.origin,
+                    "destination": o.destination,
+                    "weight_kg": o.weight,
+                    "created_at": o.created_at.isoformat() if o.created_at else None
+                }
+                for o in orders
+            ],
+            "meta": "MY-ORDERS-V1"
+        }
+        
+        return json.dumps(result, ensure_ascii=False)
+        
+    except Exception as e:
+        return json.dumps({
+            "error": f"Ошибка получения заказов: {str(e)}",
+            "meta": "MY-ORDERS-V1"
+        }, ensure_ascii=False)
 
 
 TOOLS_SCHEMA = [
@@ -329,7 +381,7 @@ TOOLS_SCHEMA = [
                 "type": "object",
                 "properties": {
                     "declared_value_rub": {"type": "number"},
-                    "category": {"type": "string", "enum": ["basic", "pro", "premium"], "default": "basic"}
+                    "category": {"type": "string", "enum": ["auto", "basic", "pro", "premium"], "default": "auto"}
                 },
                 "required": ["declared_value_rub"]
             }
@@ -362,5 +414,31 @@ TOOLS_SCHEMA = [
                 "required": ["query"]
             }
         }
+    },
+    {
+    "type": "function",
+    "function": {
+        "name": "get_my_orders",
+        "description": "Получить список заказов текущего пользователя. Используй, когда пользователь спрашивает про 'мой заказ', 'мои заказы' без указания трек-номера.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "limit": {
+                    "type": "integer",
+                    "description": "Максимальное количество заказов для возврата (1-20, по умолчанию 5)",
+                    "default": 5,
+                    "minimum": 1,
+                    "maximum": 20
+                },
+                "status_filter": {
+                    "type": "string",
+                    "description": "Фильтр по статусу: 'created', 'in_transit', 'delivered', 'cancelled' или 'all'",
+                    "enum": ["all", "created", "in_transit", "delivered", "cancelled"],
+                    "default": "all"
+                }
+            },
+            "required": []
+        }
     }
+}
 ]

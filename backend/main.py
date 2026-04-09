@@ -1,8 +1,10 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from api import auth, orders, chats
 from database.database import engine, Base, SessionLocal
 from database import models, crud
 from schemas import schemas
+from security import hash_password
 
 Base.metadata.create_all(bind=engine)
 
@@ -12,16 +14,43 @@ app = FastAPI(
     version="1.0.0"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:4173",
+        "http://127.0.0.1:4173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 def init_db():
     db = SessionLocal()
     try:
         if not crud.get_user_by_username(db, "admin"):
-            crud.create_user(db, schemas.UserCreate(username="admin", password="password"), role=models.RoleEnum.moderator)
-            test_user = crud.create_user(db, schemas.UserCreate(username="client", password="password"), role=models.RoleEnum.user)
-            crud.create_order(db, schemas.OrderCreate(
-                tracking_number="TRACK-777", origin="Москва", destination="Казань", weight=2.5
-            ), user_id=test_user.id)
-            print("Базовые данные успешно созданы!")
+            admin = schemas.UserCreate(username="admin", password=hash_password("root"))
+            crud.create_user(
+                db, 
+                admin,
+                role=models.RoleEnum.admin.value
+            )
+            
+            test_user = crud.create_user(
+                db, 
+                schemas.UserCreate(username="user", password=hash_password("user")),
+                role=models.RoleEnum.user.value
+            )
+            
+            crud.create_order(
+                db, 
+                schemas.OrderCreate(tracking_number="TRACK-777", origin="Москва", destination="Казань", weight=2.5),
+                user_id=test_user.id
+            )
+            
+            print("✅ Базовые пользователи успешно созданы (admin:root, user:user)!")
     finally:
         db.close()
 

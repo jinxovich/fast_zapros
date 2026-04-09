@@ -8,6 +8,7 @@ class UserCreate(BaseModel):
     username: str
     password: str
 
+
 class UserResponse(BaseModel):
     id: int
     username: str
@@ -15,7 +16,22 @@ class UserResponse(BaseModel):
     
     model_config = ConfigDict(from_attributes=True)
 
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+
+class RoleRequestCreate(BaseModel):
+    role: RoleEnum
+
+
 # Схемы Заказов
+class OrderCreateRequest(BaseModel):
+    origin: str
+    destination: str
+    weight: float
+
 class OrderCreate(BaseModel):
     tracking_number: str
     origin: str
@@ -36,7 +52,6 @@ class OrderResponse(BaseModel):
 
 # Схемы Чатов и Сообщений
 class MessageCreate(BaseModel):
-    sender_role: SenderRoleEnum
     content: str
 
 class MessageResponse(BaseModel):

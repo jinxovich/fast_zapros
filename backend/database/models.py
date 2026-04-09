@@ -7,7 +7,10 @@ from database.database import Base
 # Перечисления для строгих статусов 
 class RoleEnum(str, enum.Enum):
     user = "user"
+    admin = "admin"
     moderator = "moderator"
+    pending_moderator = "pending_moderator"
+    pending_admin = "pending_admin"
 
 class OrderStatusEnum(str, enum.Enum):
     created = "created"
@@ -28,7 +31,8 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    role = Column(SQLEnum(RoleEnum), default=RoleEnum.user)
+    # Храним роль строкой, чтобы не упираться в миграции Enum в Postgres
+    role = Column(String, default=RoleEnum.user.value, nullable=False)
 
     # Связи с другими таблицами
     orders = relationship("Order", back_populates="owner")

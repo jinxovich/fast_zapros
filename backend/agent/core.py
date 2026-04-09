@@ -4,6 +4,7 @@ import json
 import inspect
 from sqlalchemy.orm import Session
 from database import models
+from config import OLLAMA_BASE_URL, OLLAMA_MODEL_NAME
 from agent.tools import (
     TOOLS_SCHEMA,
     get_order_status,
@@ -13,12 +14,13 @@ from agent.tools import (
     estimate_delivery_date,
     validate_package_dimensions,
     get_insurance_quote,
-    get_prohibited_items
+    get_prohibited_items,
+    get_my_orders
 )
 from agent.rag import get_relevant_context
 
-client = OpenAI(base_url="http://localhost:11434/v1", api_key="ollama")
-MODEL_NAME = "llama3.1"
+client = OpenAI(base_url=OLLAMA_BASE_URL, api_key="ollama")
+MODEL_NAME = OLLAMA_MODEL_NAME
 MAX_TOOL_ITERATIONS = 3
 
 TOOL_REGISTRY = {
@@ -30,6 +32,7 @@ TOOL_REGISTRY = {
     "validate_package_dimensions": validate_package_dimensions,
     "get_insurance_quote": get_insurance_quote,
     "get_prohibited_items": get_prohibited_items,
+    "get_my_orders": get_my_orders,
 }
 
 
@@ -74,7 +77,7 @@ def generate_ai_response(db: Session, chat_id: int, user_id: int, user_message: 
 
 ФОРМАТ ОТВЕТА:
 - Без md разметки
-- Никаких эмодзи, смайликов, декоративных символов (✨, 🚚, ---, ***, и т.п.)
+- Никаких эмодзи, смайликов, декоративных символов
 - Только чистый текст, нумерованные/маркированные списки
 - При использовании RAG указывай код правила (напр. ПРАВИЛО-УП-01)
 - При использовании калькулятора указывай код расчёта (напр. STORAGE-CALC-V1)
@@ -104,13 +107,16 @@ def generate_ai_response(db: Session, chat_id: int, user_id: int, user_message: 
         messages.append({"role": "user", "content": user_message})
 
         for _ in range(MAX_TOOL_ITERATIONS):
-            response = client.chat.completions.create(
-                model=MODEL_NAME,
-                messages=messages,
-                tools=TOOLS_SCHEMA,
-                tool_choice="auto",
-                temperature=0.2,
-            )
+            try:
+                response = client.chat.completions.create(
+                    model=MODEL_NAME,
+                    messages=messages,
+                    tools=TOOLS_SCHEMA,
+                    tool_choice="auto",
+                    temperature=0.2,
+                )
+            except Exception:
+                return "Сервис поддержки временно недоступен. Попробуйте позже или дождитесь ответа модератора."
             assistant_msg = response.choices[0].message
 
             if not assistant_msg.tool_calls:
@@ -143,6 +149,9 @@ def generate_ai_response(db: Session, chat_id: int, user_id: int, user_message: 
                     kwargs = args.copy()
                     if "db" in sig.parameters:
                         kwargs["db"] = db
+                    # get_order_status требует id пользователя, но schema его не просит у модели
+                    if "current_user_id" in sig.parameters and "current_user_id" not in kwargs:
+                        kwargs["current_user_id"] = user_id
                     result = func(**kwargs)
 
                 print(f"[TOOL] Результат: {result[:180]}...")

@@ -6,7 +6,11 @@ from schemas import schemas
 def get_user_by_username(db: Session, username: str):
     return db.query(models.User).filter(models.User.username == username).first()
 
-def create_user(db: Session, user: schemas.UserCreate, role: models.RoleEnum = models.RoleEnum.user):
+def get_user_by_id(db: Session, user_id: int):
+    return db.query(models.User).filter(models.User.id == user_id).first()
+
+
+def create_user(db: Session, user: schemas.UserCreate, role: str):
     db_user = models.User(username=user.username, password_hash=user.password, role=role)
     db.add(db_user)
     db.commit()
@@ -20,6 +24,29 @@ def create_order(db: Session, order: schemas.OrderCreate, user_id: int):
     db.commit()
     db.refresh(db_order)
     return db_order
+
+def list_pending_users(db: Session):
+    return db.query(models.User).filter(
+        models.User.role.in_([models.RoleEnum.pending_moderator.value, models.RoleEnum.pending_admin.value])
+    ).all()
+
+def update_user_role(db: Session, user_id: int, new_role: str):
+    user = get_user_by_id(db, user_id)
+    if user:
+        user.role = new_role
+        db.commit()
+        db.refresh(user)
+    return user
+
+
+def request_role_upgrade(db: Session, user_id: int, requested: str):
+    user = get_user_by_id(db, user_id)
+    if not user:
+        return None
+    user.role = requested
+    db.commit()
+    db.refresh(user)
+    return user
 
 def get_orders_by_user(db: Session, user_id: int):
     return db.query(models.Order).filter(models.Order.user_id == user_id).all()
